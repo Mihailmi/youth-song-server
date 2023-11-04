@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/smtp"
 	"os"
@@ -19,13 +20,9 @@ import (
 )
 
 type Song struct {
-	song_Number  string   `bson:"number"`
-	song_Lyrics  []string `bson:"lyrics"`
-	song_Title   string   `bson:"title"`
-	song_pptx    string   `bson:"pptx"`
-	file_type    string   `bson:"type"`
-	file_name    string   `bson:"name"`
-	file_version string   `bson:"version"`
+	pptx    string
+	obj_id  string `bson:"_id"`
+	version string
 }
 
 func writeDB() {
@@ -688,13 +685,15 @@ func uploadSongToMongoDB(c *gin.Context) {
 
 	var songToUpload Song
 	// Get handler for filename, size and headers
-	songToUpload.song_pptx = c.PostForm("pptx")
-	songToUpload.song_Title = c.PostForm("title")
-	songToUpload.file_name = c.PostForm("name")
-	songToUpload.song_Lyrics = strings.Split(c.PostForm("lyrics"), "\n")
-	songToUpload.file_type = "pptx"
-	songToUpload.song_Number = c.PostForm("number")
-	songToUpload.file_version = "1"
+
+	file, _ := c.FormFile("pptx")
+	songToUpload.obj_id = c.PostForm("id")
+	songToUpload.version = "1"
+	objectId, err := primitive.ObjectIDFromHex(songToUpload.obj_id)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// songToUpload.pptx
 
 	//mongo
 	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb+srv://firstuser:xwI7zM83v62q5SVj@testcluster1.1brcg.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"))
@@ -714,9 +713,9 @@ func uploadSongToMongoDB(c *gin.Context) {
 		log.Fatal(err)
 	}
 
-	collection := client.Database("songs").Collection("songs")
+	collection := client.Database("appSongs").Collection("songs")
 
-	so, err3 := collection.Find(ctx, bson.M{"title": songToUpload.song_Title})
+	so, err3 := collection.Find(ctx, bson.M{"_id": objectId})
 	if err3 != nil {
 		log.Fatal(err)
 	}
@@ -726,19 +725,89 @@ func uploadSongToMongoDB(c *gin.Context) {
 	}
 
 	if len(findsongs) != 0 {
-		c.JSON(409, songToUpload.song_Title+" File already in mongodb")
+		c.JSON(409, songToUpload.obj_id+" File already in mongodb")
 		return
 	}
 
-	//uploading to mongodb
+	// filename := filepath.Base(file.Filename)
+	// c.SaveUploadedFile(file, filename)
+	// file1, err := os.Open(filename)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// defer file1.Close()
 
-	colres, err := collection.InsertOne(context.TODO(), songToUpload)
+	openedFile, _ := file.Open()
+	songpptx, _ := ioutil.ReadAll(openedFile)
+
+	songToUpload.pptx = string(songpptx)
+
+	//uploading to mongodb
+	colres, err := collection.InsertOne(context.TODO(), bson.D{
+		{Key: "_id", Value: objectId},
+		{Key: "version", Value: songToUpload.version},
+		{Key: "pptx", Value: songToUpload.pptx},
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(colres)
 	fmt.Println(songToUpload)
 	c.JSON(200, "Uploaded successfully!")
+}
+
+func getSongFromMongoDB(c *gin.Context) {
+
+	objectId, err := primitive.ObjectIDFromHex(c.PostForm("id"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//mongo
+	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb+srv://firstuser:xwI7zM83v62q5SVj@testcluster1.1brcg.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+
+	err = client.Connect(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer client.Disconnect(ctx)
+	err = client.Ping(ctx, readpref.Primary())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	collection := client.Database("appSongs").Collection("songs")
+	filter := bson.M{"_id": objectId}
+
+	var result bson.M
+	err = collection.FindOne(context.TODO(), filter).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			c.JSON(204, "File isn't in mongodb")
+			return
+		}
+		panic(err)
+	}
+
+	str := fmt.Sprintf("%v", result["pptx"])
+	// fmt.Println(str)
+	dst, err3 := os.Create(c.PostForm("id") + ".pptx")
+	if err3 != nil {
+		log.Fatal(err)
+	}
+	dst.Write([]byte(str))
+	dst.Close()
+	c.JSON(200, result["_id"])
+}
+
+func downloadSongFromMongoDB(c *gin.Context) {
+
+	c.File(c.PostForm("id") + ".pptx")
 }
 
 func main() {
@@ -750,6 +819,8 @@ func main() {
 	server.POST("/updateById", updateById)
 	server.POST("/createEmty", createEmty)
 	server.POST("/uploadSong", uploadSongToMongoDB)
+	server.POST("/getSong", getSongFromMongoDB)
+	server.POST("/downloadSong", downloadSongFromMongoDB)
 	server.POST("/addUser", addUser)
 	server.POST("/addEvent", addEvent)
 	server.POST("/find", findDB)           // collection, fild, whatToFind, если fild пустое вернет всё
