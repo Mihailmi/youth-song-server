@@ -15,8 +15,18 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
-	"nto.com/v3/entity"
+	"song.com/v1/entity"
 )
+
+type Song struct {
+	song_Number  string   `bson:"number"`
+	song_Lyrics  []string `bson:"lyrics"`
+	song_Title   string   `bson:"title"`
+	song_pptx    string   `bson:"pptx"`
+	file_type    string   `bson:"type"`
+	file_name    string   `bson:"name"`
+	file_version string   `bson:"version"`
+}
 
 func writeDB() {
 	// client, err := mongo.NewClient(options.Client().ApplyURI("mongodb://uru3xmclir6cuzp73mkz:61L8uYL9CudlbOL9PYLR@n1-c2-mongodb-clevercloud-customers.services.clever-cloud.com:27017,n2-c2-mongodb-clevercloud-customers.services.clever-cloud.com:27017/bvm47vjpnnaq4zo?replicaSet=rs0"))
@@ -674,6 +684,63 @@ func createEmty(c *gin.Context) {
 	c.JSON(200, result.InsertedID)
 }
 
+func uploadSongToMongoDB(c *gin.Context) {
+
+	var songToUpload Song
+	// Get handler for filename, size and headers
+	songToUpload.song_pptx = c.PostForm("pptx")
+	songToUpload.song_Title = c.PostForm("title")
+	songToUpload.file_name = c.PostForm("name")
+	songToUpload.song_Lyrics = strings.Split(c.PostForm("lyrics"), "\n")
+	songToUpload.file_type = "pptx"
+	songToUpload.song_Number = c.PostForm("number")
+	songToUpload.file_version = "1"
+
+	//mongo
+	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb+srv://firstuser:xwI7zM83v62q5SVj@testcluster1.1brcg.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+
+	err = client.Connect(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer client.Disconnect(ctx)
+	err = client.Ping(ctx, readpref.Primary())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	collection := client.Database("songs").Collection("songs")
+
+	so, err3 := collection.Find(ctx, bson.M{"title": songToUpload.song_Title})
+	if err3 != nil {
+		log.Fatal(err)
+	}
+	var findsongs []bson.M
+	if err3 = so.All(ctx, &findsongs); err3 != nil {
+		log.Fatal(err)
+	}
+
+	if len(findsongs) != 0 {
+		c.JSON(409, songToUpload.song_Title+" File already in mongodb")
+		return
+	}
+
+	//uploading to mongodb
+
+	colres, err := collection.InsertOne(context.TODO(), songToUpload)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(colres)
+	fmt.Println(songToUpload)
+	c.JSON(200, "Uploaded successfully!")
+}
+
 func main() {
 	server := gin.Default()
 
@@ -682,6 +749,7 @@ func main() {
 	server.POST("/updateUser", userUpdate)
 	server.POST("/updateById", updateById)
 	server.POST("/createEmty", createEmty)
+	server.POST("/uploadSong", uploadSongToMongoDB)
 	server.POST("/addUser", addUser)
 	server.POST("/addEvent", addEvent)
 	server.POST("/find", findDB)           // collection, fild, whatToFind, если fild пустое вернет всё

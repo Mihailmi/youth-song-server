@@ -1,4 +1,4 @@
-module nto.com/v3
+module song.com/v1
 
 go 1.16
 
