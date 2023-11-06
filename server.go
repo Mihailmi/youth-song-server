@@ -817,6 +817,54 @@ func getSongFromMongoDB(c *gin.Context) {
 	c.JSON(200, result["_id"])
 }
 
+func getListOfSongs(c *gin.Context) {
+
+	//mongo
+	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb+srv://firstuser:xwI7zM83v62q5SVj@testcluster1.1brcg.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+
+	err = client.Connect(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer client.Disconnect(ctx)
+	err = client.Ping(ctx, readpref.Primary())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	collection := client.Database("appSongs").Collection("songs")
+
+	cursor, err := collection.Find(ctx, bson.D{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cursor.Close(ctx)
+
+	// Iterate over the cursor and build the songs array
+	var songs []bson.M
+	if err := cursor.All(ctx, &songs); err != nil {
+		log.Fatal(err)
+	}
+
+	// Create a new array for storing the simplified song objects
+	var simplifiedSongs []map[string]interface{}
+	for _, song := range songs {
+		simplifiedSong := map[string]interface{}{
+			"id":      song["_id"].(primitive.ObjectID).Hex(),
+			"version": song["version"],
+			"title":   song["title"],
+		}
+		simplifiedSongs = append(simplifiedSongs, simplifiedSong)
+	}
+
+	c.JSON(200, simplifiedSongs)
+}
+
 func downloadSongFromMongoDB(c *gin.Context) {
 	c.File(c.PostForm("id") + ".pptx")
 	e := os.Remove(c.PostForm("id") + ".pptx")
@@ -898,6 +946,7 @@ func main() {
 	server.POST("/getSong", getSongFromMongoDB)
 	server.POST("/downloadSong", downloadSongFromMongoDB)
 	server.POST("/changeId", changeSongIDInMongoDB)
+	server.GET("/getListOfSongs", getListOfSongs)
 	server.POST("/addUser", addUser)
 	server.POST("/addEvent", addEvent)
 	server.POST("/find", findDB)           // collection, fild, whatToFind, если fild пустое вернет всё
