@@ -825,6 +825,67 @@ func downloadSongFromMongoDB(c *gin.Context) {
 	}
 }
 
+func changeSongIDInMongoDB(c *gin.Context) {
+
+	// Parse the ID from the request
+	objectID, err := primitive.ObjectIDFromHex(c.PostForm("id"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create a new MongoDB client
+	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb+srv://firstuser:xwI7zM83v62q5SVj@testcluster1.1brcg.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+
+	// Connect to the MongoDB server
+	err = client.Connect(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Disconnect(ctx)
+
+	err = client.Ping(ctx, readpref.Primary())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Access the "appSongs" collection in the "songs" database
+	collection := client.Database("appSongs").Collection("songs")
+
+	// Define the filter to find the document with the given ID
+	filter := bson.M{"_id": objectID}
+
+	// Find the document by ID
+	var result bson.M
+	err = collection.FindOne(context.TODO(), filter).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			c.JSON(204, "File isn't in MongoDB")
+			return
+		}
+		panic(err)
+	}
+
+	// Remove the existing document with the old ID
+	_, err = collection.DeleteOne(context.TODO(), filter)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Modify the ID field in the result document
+	result["_id"] = c.PostForm("newId") // Replace "new-id" with the new ID you want to set
+
+	// Insert the updated document with the new ID
+	_, err = collection.InsertOne(context.TODO(), result)
+	if err != nil {
+		log.Fatal(err)
+	}
+	c.JSON(200, "ID changed successfully")
+}
+
 func main() {
 	server := gin.Default()
 
@@ -836,6 +897,7 @@ func main() {
 	server.POST("/uploadSong", uploadSongToMongoDB)
 	server.POST("/getSong", getSongFromMongoDB)
 	server.POST("/downloadSong", downloadSongFromMongoDB)
+	server.POST("/changeId", changeSongIDInMongoDB)
 	server.POST("/addUser", addUser)
 	server.POST("/addEvent", addEvent)
 	server.POST("/find", findDB)           // collection, fild, whatToFind, если fild пустое вернет всё
