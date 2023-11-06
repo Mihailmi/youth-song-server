@@ -689,10 +689,7 @@ func uploadSongToMongoDB(c *gin.Context) {
 	file, _ := c.FormFile("pptx")
 	songToUpload.obj_id = c.PostForm("id")
 	songToUpload.version = "1"
-	objectId, err := primitive.ObjectIDFromHex(songToUpload.obj_id)
-	if err != nil {
-		log.Fatal(err)
-	}
+
 	// songToUpload.pptx
 
 	//mongo
@@ -715,20 +712,6 @@ func uploadSongToMongoDB(c *gin.Context) {
 
 	collection := client.Database("appSongs").Collection("songs")
 
-	so, err3 := collection.Find(ctx, bson.M{"_id": objectId})
-	if err3 != nil {
-		log.Fatal(err)
-	}
-	var findsongs []bson.M
-	if err3 = so.All(ctx, &findsongs); err3 != nil {
-		log.Fatal(err)
-	}
-
-	if len(findsongs) != 0 {
-		c.JSON(409, songToUpload.obj_id+" File already in mongodb")
-		return
-	}
-
 	// filename := filepath.Base(file.Filename)
 	// c.SaveUploadedFile(file, filename)
 	// file1, err := os.Open(filename)
@@ -742,16 +725,45 @@ func uploadSongToMongoDB(c *gin.Context) {
 
 	songToUpload.pptx = string(songpptx)
 
-	//uploading to mongodb
-	colres, err := collection.InsertOne(context.TODO(), bson.D{
-		{Key: "_id", Value: objectId},
-		{Key: "version", Value: songToUpload.version},
-		{Key: "pptx", Value: songToUpload.pptx},
-	})
-	if err != nil {
-		log.Fatal(err)
+	if songToUpload.obj_id != "" {
+		objectId, err := primitive.ObjectIDFromHex(songToUpload.obj_id)
+		if err != nil {
+			log.Fatal(err)
+		}
+		so, err3 := collection.Find(ctx, bson.M{"_id": objectId})
+		if err3 != nil {
+			log.Fatal(err)
+		}
+		var findsongs []bson.M
+		if err3 = so.All(ctx, &findsongs); err3 != nil {
+			log.Fatal(err)
+		}
+
+		if len(findsongs) != 0 {
+			c.JSON(409, songToUpload.obj_id+" File already in mongodb")
+			return
+		}
+		colres, err := collection.InsertOne(context.TODO(), bson.D{
+			{Key: "_id", Value: objectId},
+			{Key: "version", Value: songToUpload.version},
+			{Key: "pptx", Value: songToUpload.pptx},
+			{Key: "title", Value: file.Filename},
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(colres)
+	} else {
+		colres, err := collection.InsertOne(context.TODO(), bson.D{
+			{Key: "version", Value: songToUpload.version},
+			{Key: "pptx", Value: songToUpload.pptx},
+			{Key: "title", Value: file.Filename},
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(colres)
 	}
-	fmt.Println(colres)
 	fmt.Println(songToUpload)
 	c.JSON(200, "Uploaded successfully!")
 }
@@ -806,8 +818,11 @@ func getSongFromMongoDB(c *gin.Context) {
 }
 
 func downloadSongFromMongoDB(c *gin.Context) {
-
 	c.File(c.PostForm("id") + ".pptx")
+	e := os.Remove(c.PostForm("id") + ".pptx")
+	if e != nil {
+		log.Fatal(e)
+	}
 }
 
 func main() {
