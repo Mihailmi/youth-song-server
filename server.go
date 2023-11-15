@@ -764,7 +764,7 @@ func uploadSongToMongoDB(c *gin.Context) {
 		}
 		fmt.Println(colres)
 	}
-	fmt.Println(songToUpload)
+	// fmt.Println(songToUpload)
 	c.JSON(200, "Uploaded successfully!")
 }
 
@@ -814,7 +814,8 @@ func getSongFromMongoDB(c *gin.Context) {
 	}
 	dst.Write([]byte(str))
 	dst.Close()
-	c.JSON(200, result["_id"])
+	result["pptx"] = ""
+	c.JSON(200, result)
 }
 
 func getListOfSongs(c *gin.Context) {
@@ -866,17 +867,31 @@ func getListOfSongs(c *gin.Context) {
 }
 
 func downloadSongFromMongoDB(c *gin.Context) {
-	c.File(c.PostForm("id") + ".pptx")
-	e := os.Remove(c.PostForm("id") + ".pptx")
-	if e != nil {
-		log.Fatal(e)
+	filename := c.PostForm("id") + ".pptx"
+
+	// Check if file exists
+	if _, err := os.Stat(filename); err == nil {
+		c.File(filename)
+		e := os.Remove(filename)
+		if e != nil {
+			log.Fatal(e)
+		}
+	} else if os.IsNotExist(err) {
+		c.JSON(204, "No file")
+	} else {
+		c.JSON(500, "Error:"+err.Error())
 	}
+
 }
 
 func changeSongIDInMongoDB(c *gin.Context) {
 
 	// Parse the ID from the request
 	objectID, err := primitive.ObjectIDFromHex(c.PostForm("id"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	newOjectId, err := primitive.ObjectIDFromHex(c.PostForm("newId"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -902,35 +917,82 @@ func changeSongIDInMongoDB(c *gin.Context) {
 
 	// Access the "appSongs" collection in the "songs" database
 	collection := client.Database("appSongs").Collection("songs")
+	filter := bson.M{"_id": objectID}
+	oldDoc := collection.FindOne(context.Background(), filter)
+
+	var docData bson.M
+	err = oldDoc.Decode(&docData)
+	if err != nil {
+		c.JSON(404, "Error:"+err.Error())
+		return
+	}
+
+	docData["_id"] = newOjectId
+
+	_, err = collection.InsertOne(context.Background(), docData)
+	if err != nil {
+		c.JSON(409, newOjectId.String()+" File already in mongodb")
+		return
+	}
+
+	// Delete the old document
+	_, err = collection.DeleteOne(context.Background(), filter)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// filter := bson.M{"_id": "4cc45467c55f4d2d2a000002"}
+
+	// // oldDoc := collection.FindOne(context.Background(), filter)
+
+	// // Create a new _id
+	// newID, err := primitive.ObjectIDFromHex(c.PostForm("newId"))
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// // Update the document with the new _id
+	// updates := bson.M{"$set": bson.M{"_id": newID}}
+	// _, err = collection.UpdateOne(context.Background(), filter, updates)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// // Remove the document with the old _id
+	// _, err = collection.DeleteOne(context.Background(), filter)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	// Define the filter to find the document with the given ID
-	filter := bson.M{"_id": objectID}
+	// filter := bson.M{"_id": objectID}
 
-	// Find the document by ID
-	var result bson.M
-	err = collection.FindOne(context.TODO(), filter).Decode(&result)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			c.JSON(204, "File isn't in MongoDB")
-			return
-		}
-		panic(err)
-	}
+	// // Find the document by ID
+	// newId := c.PostForm("newId")
+	// update := bson.M{"$set": bson.M{"_id": newId}}
+	// _, err = collection.UpdateOne(context.TODO(), filter, update)
+	// if err != nil {
+	// 	if err == mongo.ErrNoDocuments {
+	// 		c.JSON(204, "File isn't in MongoDB or couldn't update")
+	// 		return
+	// 	}
+	// 	panic(err)
+	// }
 
-	// Remove the existing document with the old ID
-	_, err = collection.DeleteOne(context.TODO(), filter)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// // Remove the existing document with the old ID
+	// _, err = collection.DeleteOne(context.TODO(), filter)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	// Modify the ID field in the result document
-	result["_id"] = c.PostForm("newId") // Replace "new-id" with the new ID you want to set
+	// // Modify the ID field in the result document
+	// result["_id"] = c.PostForm("newId") // Replace "new-id" with the new ID you want to set
 
-	// Insert the updated document with the new ID
-	_, err = collection.InsertOne(context.TODO(), result)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// // Insert the updated document with the new ID
+	// _, err = collection.InsertOne(context.TODO(), result)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 	c.JSON(200, "ID changed successfully")
 }
 
