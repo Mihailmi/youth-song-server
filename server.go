@@ -940,60 +940,49 @@ func changeSongIDInMongoDB(c *gin.Context) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// filter := bson.M{"_id": "4cc45467c55f4d2d2a000002"}
-
-	// // oldDoc := collection.FindOne(context.Background(), filter)
-
-	// // Create a new _id
-	// newID, err := primitive.ObjectIDFromHex(c.PostForm("newId"))
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// // Update the document with the new _id
-	// updates := bson.M{"$set": bson.M{"_id": newID}}
-	// _, err = collection.UpdateOne(context.Background(), filter, updates)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// // Remove the document with the old _id
-	// _, err = collection.DeleteOne(context.Background(), filter)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// Define the filter to find the document with the given ID
-	// filter := bson.M{"_id": objectID}
-
-	// // Find the document by ID
-	// newId := c.PostForm("newId")
-	// update := bson.M{"$set": bson.M{"_id": newId}}
-	// _, err = collection.UpdateOne(context.TODO(), filter, update)
-	// if err != nil {
-	// 	if err == mongo.ErrNoDocuments {
-	// 		c.JSON(204, "File isn't in MongoDB or couldn't update")
-	// 		return
-	// 	}
-	// 	panic(err)
-	// }
-
-	// // Remove the existing document with the old ID
-	// _, err = collection.DeleteOne(context.TODO(), filter)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// // Modify the ID field in the result document
-	// result["_id"] = c.PostForm("newId") // Replace "new-id" with the new ID you want to set
-
-	// // Insert the updated document with the new ID
-	// _, err = collection.InsertOne(context.TODO(), result)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
 	c.JSON(200, "ID changed successfully")
+}
+
+func updatePptx(c *gin.Context) {
+
+	// Parse the ID from the request
+	objectID, err := primitive.ObjectIDFromHex(c.PostForm("id"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	file, _ := c.FormFile("pptx")
+
+	// Create a new MongoDB client
+	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb+srv://firstuser:xwI7zM83v62q5SVj@testcluster1.1brcg.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+
+	// Connect to the MongoDB server
+	err = client.Connect(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Disconnect(ctx)
+
+	err = client.Ping(ctx, readpref.Primary())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Access the "appSongs" collection in the "songs" database
+	collection := client.Database("appSongs").Collection("songs")
+	filter := bson.M{"_id": objectID}
+
+	openedFile, _ := file.Open()
+	songpptx, _ := ioutil.ReadAll(openedFile)
+
+	collection.FindOneAndUpdate(context.Background(), filter, bson.D{
+		{"$set", bson.D{{"pptx", string(songpptx)}}},
+	})
+
+	c.JSON(200, "power point file changed successfully")
 }
 
 func main() {
@@ -1008,6 +997,7 @@ func main() {
 	server.POST("/getSong", getSongFromMongoDB)
 	server.POST("/downloadSong", downloadSongFromMongoDB)
 	server.POST("/changeId", changeSongIDInMongoDB)
+	server.POST("/updatePptx", updatePptx)
 	server.GET("/getListOfSongs", getListOfSongs)
 	server.POST("/addUser", addUser)
 	server.POST("/addEvent", addEvent)
