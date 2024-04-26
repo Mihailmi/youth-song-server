@@ -1007,6 +1007,55 @@ func updatePptx(c *gin.Context) {
 
 }
 
+func login(c *gin.Context) {
+
+	Ulogin := c.PostForm("login")
+	Upassword := c.PostForm("password")
+
+	//mongo
+	client, err := mongo.NewClient(options.Client().ApplyURI("mongodb+srv://firstuser:xwI7zM83v62q5SVj@testcluster1.1brcg.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+
+	err = client.Connect(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer client.Disconnect(ctx)
+	err = client.Ping(ctx, readpref.Primary())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	collection := client.Database("appSongs").Collection("users")
+
+	filter := bson.D{
+		{Key: "login", Value: Ulogin},
+		{Key: "password", Value: Upassword},
+	}
+
+	fmt.Println(filter)
+
+	so, err3 := collection.Find(ctx, filter)
+	if err3 != nil {
+		log.Fatal(err)
+	}
+	var finduser []bson.M
+	if err3 = so.All(ctx, &finduser); err3 != nil {
+		log.Fatal(err)
+	}
+
+	if len(finduser) == 0 {
+		c.JSON(401, "Error login")
+		return
+	}
+
+	c.JSON(200, "Login success!")
+}
+
 func main() {
 	server := gin.Default()
 
@@ -1017,6 +1066,7 @@ func main() {
 	server.POST("/createEmty", createEmty)
 	server.POST("/uploadSong", uploadSongToMongoDB)
 	server.POST("/getSong", getSongFromMongoDB)
+	server.POST("/login", login)
 	server.POST("/downloadSong", downloadSongFromMongoDB)
 	server.POST("/changeId", changeSongIDInMongoDB)
 	server.POST("/updatePptx", updatePptx)
