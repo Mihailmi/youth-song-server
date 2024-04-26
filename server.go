@@ -22,7 +22,7 @@ import (
 type Song struct {
 	pptx    string
 	obj_id  string `bson:"_id"`
-	version string
+	version int32
 }
 
 func writeDB() {
@@ -688,7 +688,7 @@ func uploadSongToMongoDB(c *gin.Context) {
 
 	file, _ := c.FormFile("pptx")
 	songToUpload.obj_id = c.PostForm("id")
-	songToUpload.version = "1"
+	songToUpload.version = 1
 
 	// songToUpload.pptx
 
@@ -814,8 +814,13 @@ func getSongFromMongoDB(c *gin.Context) {
 	}
 	dst.Write([]byte(str))
 	dst.Close()
-	result["pptx"] = ""
-	c.JSON(200, result)
+	// result["pptx"] = ""
+	simplifiedSong := map[string]interface{}{
+		"id":      result["_id"],
+		"version": result["version"],
+		"title":   result["title"],
+	}
+	c.JSON(200, simplifiedSong)
 }
 
 func getListOfSongs(c *gin.Context) {
@@ -980,9 +985,26 @@ func updatePptx(c *gin.Context) {
 
 	collection.FindOneAndUpdate(context.Background(), filter, bson.D{
 		{"$set", bson.D{{"pptx", string(songpptx)}}},
+		{"$inc", bson.D{{"version", 1}}},
 	})
 
-	c.JSON(200, "power point file changed successfully")
+	var result bson.M
+	err = collection.FindOne(context.TODO(), filter).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			c.JSON(204, "File isn't in mongodb")
+			return
+		}
+		c.JSON(204, err)
+		return
+	}
+	simplifiedSong := map[string]interface{}{
+		"id":      result["_id"],
+		"version": result["version"],
+		"title":   result["title"],
+	}
+	c.JSON(200, simplifiedSong)
+
 }
 
 func main() {
